@@ -11,6 +11,7 @@
 #define PACKET_TYPE_DISCOVERY   0
 #define PACKET_TYPE_HEARTBEAT   1
 #define PACKET_TYPE_COLOR       2
+#define PACKET_TYPE_LFO      	3
 
 
 //#define PACKET_TYPE_SIN

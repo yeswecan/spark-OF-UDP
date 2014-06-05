@@ -4,6 +4,9 @@
 #include "stats.h"
 #include "communicationDefines.h"
 #include "communicationTypes.h"
+#include "commonTypes.h"
+#include "Interpolator.h"
+#include "LFO.h"
 #include <math.h>
 
 //#define USE_SERIAL
@@ -33,14 +36,10 @@ void loopOffline();
 
 int r, g, b;
 
-struct color {
-    int r, g, b;
-};
-
-color previousColor, targetColor;
-int targetTime, transitionTime;
-
-
+// mode stuff
+int mode; // the numbers are defined by packet type (communicationDefines.h)
+Interpolator interpolator;
+LFO lfo;
 
 //--------------------------------------------------------------
 void setup(){
@@ -55,10 +54,8 @@ void setup(){
     r = 50;
     g = 50;
     b = 50;
-    
-    targetColor.r = 50;
-    targetColor.g = 50;
-    targetColor.b = 50;
+
+    mode = PACKET_TYPE_COLOR;
     
     delay(5);
 }
@@ -71,27 +68,18 @@ void loop(){
     statsUpdate();          // smooth out the stats over time
 
     
-
-    //----------------------- are we online for real?
-    
-    if ((targetColor.r != r)||(targetColor.g != g)||(targetColor.b != b)) {
-        if (millis() > targetTime || transitionTime == 0) {
-            r = targetColor.r;
-            g = targetColor.g;
-            b = targetColor.b;
-        } else {
-            float timeFrame = (targetTime - millis());
-            float phase = 1 - (timeFrame)/(float)transitionTime;
-            float easingFunc = pow(phase, 2) / (pow(phase,2) + pow(1 - phase, 2));
-            // setting up r,g,b with easing func:
-            r = previousColor.r + (int)((float)targetColor.r - (float)previousColor.r) * easingFunc;
-            g = previousColor.g + (int)((float)targetColor.g - (float)previousColor.g) * easingFunc;
-            b = previousColor.b + (int)((float)targetColor.b - (float)previousColor.b) * easingFunc;
-        }
+    switch (mode) {
+        case PACKET_TYPE_COLOR:
+            interpolator.process(r,g,b);
+        case PACKET_TYPE_LFO:
+            lfo.process(r,g,b);
     }
 
     pwm (r,g,b);
     
+
+    //----------------------- are we online for real?
+
     bool bOnlinePrev = bOnline;
     
     IPAddress addr = Network.localIP();
@@ -251,47 +239,13 @@ void handlePacket( byte * data){
 
       
         
-    } else if (O2Spacket.packetType == PACKET_TYPE_COLOR){
-        
+    } else if (O2Spacket.packetType == PACKET_TYPE_COLOR) {
         // don't respond, right?
-        
-        if ((O2Spacket.r != targetColor.r)||(O2Spacket.g != targetColor.g)||(O2Spacket.b != targetColor.b)) {
-            
-            if (O2Spacket.transitionTime != 0){
-            
-                previousColor.r = r;
-                previousColor.g = g;
-                previousColor.b = b;
-                //
-                targetColor.r = O2Spacket.r;
-                targetColor.g = O2Spacket.g;
-                targetColor.b = O2Spacket.b;
-
-                // defaulting transition to second
-                transitionTime = O2Spacket.transitionTime;
-
-                targetTime = millis() + transitionTime;
-            } else {
-                previousColor.r = O2Spacket.r;
-                previousColor.g = O2Spacket.g;
-                previousColor.b = O2Spacket.b;
-                //
-                targetColor.r = O2Spacket.r;
-                targetColor.g = O2Spacket.g;
-                targetColor.b = O2Spacket.b;
-                
-                r =O2Spacket.r;
-                g =O2Spacket.g;
-                b =O2Spacket.b;
-                
-                
-                transitionTime = 0;
-                
-                targetTime = millis();
-                
-            }
-        }
-        
+        interpolator.addTarget(O2Spacket.r, O2Spacket.g, O2Spacket.b, O2Spacket.argument1);
+        mode = PACKET_TYPE_COLOR;
+    } else if (O2Spacket.packetType == PACKET_TYPE_LFO) {
+        lfo.addTarget(O2Spacket.r, O2Spacket.g, O2Spacket.b, O2Spacket.argument1, O2Spacket.argument2);
+        mode = PACKET_TYPE_LFO;
     }
 }
 
